@@ -1,0 +1,1927 @@
+function analyzeBatchTeams() {
+            if (batchTeams.length === 0) {
+                showError('Please upload CSV files first.');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+
+            setTimeout(() => {
+                try {
+                    const analyzedTeams = [];
+
+                    // Analyze each team
+                    batchTeams.forEach(team => {
+                        const analyzedHitters = team.players.map(player => {
+                            const compositeScore = calculateCompositeScore(player);
+                            return {
+                                ...player,
+                                compositeScore: compositeScore
+                            };
+                        }).filter(player => player.compositeScore > 0);
+
+                        if (analyzedHitters.length > 0) {
+                            analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
+                            
+                            analyzedTeams.push({
+                                name: team.name,
+                                fileName: team.fileName,
+                                hitters: analyzedHitters,
+                                stats: calculateTeamStats(analyzedHitters)
+                            });
+                        }
+                    });
+
+                    if (analyzedTeams.length === 0) {
+                        throw new Error('No teams with valid statistics found.');
+                    }
+
+                    // Sort teams by average composite score
+                    analyzedTeams.sort((a, b) => b.stats.avgScore - a.stats.avgScore);
+
+                    displayBatchResults(analyzedTeams);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('results').style.display = 'block';
+                    
+                    // Auto-save all teams to history
+                    analyzedTeams.forEach(team => {
+                        const teamAnalysis = {
+                            hitters: team.hitters,
+                            teamName: team.name,
+                            date: new Date().toLocaleDateString(),
+                            weights: {
+                                laWeight: parseFloat(document.getElementById('laWeight').value),
+                                xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value),
+                                barrelWeight: parseFloat(document.getElementById('barrelWeight').value),
+                                hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value),
+                                isoWeight: parseFloat(document.getElementById('isoWeight').value),
+                                contactWeight: parseFloat(document.getElementById('contactWeight').value)
+                            }
+                        };
+                        
+                        const existingIndex = savedTeams.findIndex(t => t.teamName === team.name);
+                        if (existingIndex >= 0) {
+                            savedTeams[existingIndex] = teamAnalysis;
+                        } else {
+                            savedTeams.push(teamAnalysis);
+                        }
+                    });
+                    
+                    updateTeamSelector();
+                    showTeamHistory();
+
+                } catch (error) {
+                    console.error('Error analyzing batch teams:', error);
+                    showError('Error analyzing data: ' + error.message);
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 500);
+        }
+
+        function calculateTeamStats(hitters) {
+            const scores = hitters.map(h => h.compositeScore);
+            const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+            const topScore = Math.max(...scores);
+            const eliteCount = hitters.filter(h => h.compositeScore >= 70).length;
+            const depthScore = hitters.slice(0, 10).reduce((sum, h) => sum + h.compositeScore, 0) / Math.min(10, hitters.length);
+            
+            return {
+                avgScore,
+                topScore,
+                eliteCount,
+                depthScore,
+                playerCount: hitters.length
+            };
+        }
+
+        function displayBatchResults(teams) {
+            const container = document.getElementById('topPlayers');
+            container.innerHTML = '';
+
+            // Create batch summary
+            const batchSummary = document.createElement('div');
+            batchSummary.className = 'batch-summary';
+            
+            const totalPlayers = teams.reduce((sum, team) => sum + team.hitters.length, 0);
+            const avgTeamScore = teams.reduce((sum, team) => sum + team.stats.avgScore, 0) / teams.length;
+            const bestTeam = teams[0];
+            const mostElite = teams.reduce((best, team) => 
+                team.stats.eliteCount > best.stats.eliteCount ? team : best
+            );
+
+            batchSummary.innerHTML = `
+                <h4>📊 Batch Analysis Summary</h4>
+                <div class="summary-stats">
+                    <div class="summary-stat">
+                        <div class="summary-label">Teams Analyzed</div>
+                        <div class="summary-value">${teams.length}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Total Players</div>
+                        <div class="summary-value">${totalPlayers}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Avg Team Score</div>
+                        <div class="summary-value">${avgTeamScore.toFixed(1)}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Best Overall</div>
+                        <div class="summary-value">${bestTeam.name}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Most Elite Players</div>
+                        <div class="summary-value">${mostElite.name} (${mostElite.stats.eliteCount})</div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(batchSummary);
+
+            // Create team comparison grid
+            const comparisonGrid = document.createElement('div');
+            comparisonGrid.className = 'team-comparison-grid';
+
+            teams.forEach((team, index) => {
+                const teamCard = document.createElement('div');
+                teamCard.className = 'team-summary';
+                if (index === 0) teamCard.style.borderLeftColor = '#ffd700';
+                if (index === 1) teamCard.style.borderLeftColor = '#c0c0c0';
+                if (index === 2) teamCard.style.borderLeftColor = '#cd7f32';
+
+                const topPlayers = team.hitters.slice(0, 3);
+                
+                teamCard.innerHTML = `
+                    <div class="team-header">
+                        <div class="team-name">#${index + 1} ${team.name}</div>
+                        <div class="team-date">${team.stats.avgScore.toFixed(1)} avg</div>
+                    </div>
+                    <div class="team-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Players</div>
+                            <div class="stat-value">${team.stats.playerCount}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Top Score</div>
+                            <div class="stat-value">${team.stats.topScore.toFixed(1)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Elite (70+)</div>
+                            <div class="stat-value">${team.stats.eliteCount}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Depth Score</div>
+                            <div class="stat-value">${team.stats.depthScore.toFixed(1)}</div>
+                        </div>
+                    </div>
+                    <div class="team-top-players">
+                        ${topPlayers.map((player, pIndex) => {
+                            const playerName = player.player_name || 'Unknown';
+                            return `
+                                <div class="mini-player-card">
+                                    <div class="mini-player-name">#${pIndex + 1} ${playerName}</div>
+                                    <div class="mini-player-score">${player.compositeScore.toFixed(1)} pts</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+                
+                comparisonGrid.appendChild(teamCard);
+            });
+
+            container.appendChild(comparisonGrid);
+
+            // Update current team title
+            document.getElementById('currentTeamTitle').textContent = `Batch Analysis Results - ${teams.length} Teams`;
+            
+            // Hide save button in batch mode
+            document.getElementById('saveTeamBtn').style.display = 'none';
+
+            // Create detailed table for batch results
+            displayBatchTable(teams);
+        }
+
+        function displayBatchTable(teams) {
+            const container = document.getElementById('fullTable');
+            
+            const table = document.createElement('table');
+            
+            // Headers
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th>Team Rank</th>
+                    <th>Team</th>
+                    <th>Player Rank</th>
+                    <th>Player</th>
+                    <th>Score</th>
+                    <th>xWOBA</th>
+                    <th>WOBA</th>
+                    <th>Gap</th>
+                    <th>Barrel%</th>
+                    <th>Hard Hit%</th>
+                    <th>ISO</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+
+            // Body - show top 5 players from each team
+            const tbody = document.createElement('tbody');
+            teams.forEach((team, teamIndex) => {
+                const topHitters = team.hitters.slice(0, 5);
+                
+                topHitters.forEach((player, playerIndex) => {
+                    const row = document.createElement('tr');
+                    const playerName = player.player_name || 'Unknown';
+                    const xwobaGap = (player.xwoba || 0) - (player.woba || 0);
+                    
+                    // Color code team rows
+                    if (teamIndex % 2 === 0) {
+                        row.style.backgroundColor = '#f8f9fa';
+                    }
+                    
+                    row.innerHTML = `
+                        <td><strong>#${teamIndex + 1}</strong></td>
+                        <td style="text-align: left;"><strong>${team.name}</strong></td>
+                        <td><strong>${playerIndex + 1}</strong></td>
+                        <td style="text-align: left;">${playerName}</td>
+                        <td><strong>${player.compositeScore.toFixed(1)}</strong></td>
+                        <td>${(player.xwoba || 0).toFixed(3)}</td>
+                        <td>${(player.woba || 0).toFixed(3)}</td>
+                        <td style="color: ${xwobaGap > 0 ? '#28a745' : '#dc3545'};">
+                            ${xwobaGap > 0 ? '+' : ''}${xwobaGap.toFixed(3)}
+                        </td>
+                        <td>${(player.barrels_per_pa_percent || 0).toFixed(1)}%</td>
+                        <td>${(player.hardhit_percent || 0).toFixed(1)}%</td>
+                        <td>${(player.iso || 0).toFixed(3)}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Add separator row between teams
+                if (teamIndex < teams.length - 1) {
+                    const separatorRow = document.createElement('tr');
+                    separatorRow.innerHTML = '<td colspan="11" style="height: 5px; background: #dee2e6;"></td>';
+                    tbody.appendChild(separatorRow);
+                }
+            });
+            table.appendChild(tbody);
+
+            container.innerHTML = '';
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'table-container';
+            tableContainer.appendChild(table);
+            container.appendChild(tableContainer);
+        }<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baseball Hitter Performance Analyzer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 300;
+        }
+
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .main-content {
+            padding: 30px;
+        }
+
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .input-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 12px;
+            border: 2px solid #e9ecef;
+        }
+
+        .input-section h3 {
+            color: #495057;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .file-input-container {
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        .file-input-hidden {
+            position: absolute;
+            left: -9999px;
+            opacity: 0;
+        }
+
+        .file-input-label {
+            display: flex;
+            align-items: center;
+            padding: 20px;
+            border: 2px dashed #007bff;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        .file-input-label:hover {
+            border-color: #0056b3;
+            background: #f8f9ff;
+        }
+
+        .file-input-label.has-file {
+            border-color: #28a745;
+            background: #f8fff8;
+        }
+
+        .file-icon {
+            font-size: 2em;
+            margin-right: 15px;
+        }
+
+        .file-text {
+            flex: 1;
+        }
+
+        .file-main {
+            font-weight: 600;
+            color: #495057;
+            font-size: 1.1em;
+        }
+
+        .file-sub {
+            color: #6c757d;
+            font-size: 0.9em;
+            margin-top: 3px;
+        }
+
+        .file-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .file-status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+
+        .file-status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+
+        .batch-file-container {
+            margin-bottom: 15px;
+        }
+
+        .batch-status {
+            margin-top: 10px;
+        }
+
+        .file-item {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 10px;
+            margin: 5px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .file-item.success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+        }
+
+        .file-item.error {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+
+        .file-info {
+            flex: 1;
+        }
+
+        .file-name {
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .file-details {
+            font-size: 0.9em;
+            color: #6c757d;
+        }
+
+        .team-comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .batch-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        .batch-summary h4 {
+            margin: 0 0 15px 0;
+            font-size: 1.3em;
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+        }
+
+        .summary-stat {
+            text-align: center;
+        }
+
+        .summary-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .instructions {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            margin: 15px 0;
+        }
+
+        .instructions ol {
+            margin-bottom: 0;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+
+        .weight-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .weight-group {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+
+        .weight-group label {
+            display: block;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .weight-group input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .analyze-btn {
+            background: linear-gradient(135deg, #28a745, #20c997);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1.1em;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .analyze-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(40, 167, 69, 0.3);
+        }
+
+        .analyze-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .results {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 30px;
+            border: 2px solid #e9ecef;
+        }
+
+        .results h3 {
+            color: #495057;
+            margin-bottom: 20px;
+            font-size: 1.4em;
+        }
+
+        .top-players {
+            display: grid;
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .player-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #007bff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .player-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+
+        .player-card.top-1 { border-left-color: #ffd700; }
+        .player-card.top-2 { border-left-color: #c0c0c0; }
+        .player-card.top-3 { border-left-color: #cd7f32; }
+
+        .player-header {
+            display: flex;
+            justify-content: between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .player-name {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .composite-score {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .player-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+
+        .stat-item {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.8em;
+            color: #6c757d;
+            margin-bottom: 3px;
+        }
+
+        .stat-value {
+            font-size: 1.1em;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .full-table {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .table-container {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: linear-gradient(135deg, #495057, #6c757d);
+            color: white;
+            padding: 12px 8px;
+            text-align: center;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 10px 8px;
+            text-align: center;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        tr:hover {
+            background: #e3f2fd;
+        }
+
+        .team-comparison {
+            display: grid;
+            gap: 20px;
+        }
+
+        .team-summary {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            border-left: 5px solid #007bff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .team-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .team-name {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+
+        .team-date {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+
+        .team-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .team-top-players {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .mini-player-card {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+        }
+
+        .mini-player-name {
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.9em;
+            margin-bottom: 3px;
+        }
+
+        .mini-player-score {
+            color: #007bff;
+            font-weight: 600;
+            font-size: 0.8em;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 1px solid #f5c6cb;
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .weight-controls {
+                grid-template-columns: 1fr;
+            }
+            
+            .player-stats {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚾ Baseball Hitter Analyzer</h1>
+            <p>Advanced Performance Analysis with Weighted Composite Scoring</p>
+        </div>
+
+        <div class="main-content">
+            <div class="controls">
+                <div class="input-section">
+                    <h3>📊 Upload Baseball Savant CSV Files</h3>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Analysis Mode:</label>
+                        <select id="analysisMode" style="width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; font-size: 1em; margin-bottom: 15px;">
+                            <option value="single">Single Team Analysis</option>
+                            <option value="batch">Batch Team Comparison</option>
+                        </select>
+                    </div>
+                    
+                    <div id="singleMode">
+                        <div style="margin-bottom: 15px;">
+                            <label for="teamName" style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Team Name:</label>
+                            <input type="text" id="teamName" placeholder="Enter team name (e.g., Detroit Tigers)" style="width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; font-size: 1em;">
+                        </div>
+                        <div class="file-input-container">
+                            <input type="file" id="csvFile" accept=".csv" class="file-input-hidden">
+                            <label for="csvFile" class="file-input-label">
+                                <div class="file-icon">📁</div>
+                                <div class="file-text">
+                                    <div class="file-main">Choose CSV File</div>
+                                    <div class="file-sub">Upload Baseball Savant CSV export</div>
+                                </div>
+                            </label>
+                            <div id="fileStatus" class="file-status"></div>
+                        </div>
+                    </div>
+
+                    <div id="batchMode" style="display: none;">
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Upload Multiple Team CSV Files:</label>
+                            <div class="batch-file-container">
+                                <input type="file" id="batchFiles" accept=".csv" multiple class="file-input-hidden">
+                                <label for="batchFiles" class="file-input-label">
+                                    <div class="file-icon">📁📁</div>
+                                    <div class="file-text">
+                                        <div class="file-main">Choose Multiple CSV Files</div>
+                                        <div class="file-sub">Select multiple Baseball Savant exports for comparison</div>
+                                    </div>
+                                </label>
+                            </div>
+                            <div id="batchStatus" class="batch-status"></div>
+                        </div>
+                    </div>
+
+                    <div class="instructions">
+                        <p style="margin: 15px 0 5px 0; color: #495057; font-weight: 600;">How to get CSV from Baseball Savant:</p>
+                        <ol style="margin: 0; padding-left: 20px; color: #6c757d; font-size: 0.9em;">
+                            <li>Go to <a href="https://baseballsavant.mlb.com/statcast_search?hfPT=FF%7CSI%7CFC%7CCH%7CCU%7C&hfAB=&hfGT=R%7C&hfPR=&hfZ=&hfStadium=&hfBBL=&hfNewZones=&hfPull=&hfC=&hfSea=2025%7C&hfSit=&player_type=batter&hfOuts=&hfOpponent=&pitcher_throws=R&batter_stands=&hfSA=&game_date_gt=&game_date_lt=&hfMo=&hfTeam=116%7C&home_road=&hfRO=&position=&hfInfield=&hfOutfield=&hfInn=&hfBBT=&hfFlag=is%5C.%5C.bunt%5C.%5C.not%7C&metric_1=&group_by=name&min_pitches=0&min_results=0&min_pas=0&sort_col=pitches&player_event_sort=api_p_release_speed&sort_order=desc&chk_stats_pa=on&chk_stats_k_percent=on&chk_stats_bb_percent=on&chk_stats_ba=on&chk_stats_obp=on&chk_stats_slg=on&chk_stats_woba=on&chk_stats_xwoba=on&chk_stats_barrels_total=on&chk_stats_iso=on&chk_stats_launch_speed=on&chk_stats_launch_angle=on&chk_stats_hardhit_percent=on&chk_stats_barrels_per_pa_percent=on#results" target="_blank" style="color: #007bff;">Baseball Savant</a></li>
+                            <li>Set your filters (team, pitcher handedness, etc.)</li>
+                            <li>Click "Download CSV" button</li>
+                            <li><strong>Batch Mode:</strong> Repeat for each team, then upload all files at once</li>
+                        </ol>
+                    </div>
+                    <button id="analyzeBtn" class="analyze-btn" disabled>
+                        🔍 Analyze Teams
+                    </button>
+                </div>
+
+                <div class="input-section">
+                    <h3>⚖️ Metric Weights</h3>
+                    <div class="weight-controls">
+                        <div class="weight-group">
+                            <label>Launch Angle Quality</label>
+                            <input type="number" id="laWeight" value="15" min="0" max="100" step="1">
+                        </div>
+                        <div class="weight-group">
+                            <label>xWOBA vs WOBA Gap</label>
+                            <input type="number" id="xwobaWeight" value="25" min="0" max="100" step="1">
+                        </div>
+                        <div class="weight-group">
+                            <label>Barrel Percentage</label>
+                            <input type="number" id="barrelWeight" value="20" min="0" max="100" step="1">
+                        </div>
+                        <div class="weight-group">
+                            <label>Hard Hit Percentage</label>
+                            <input type="number" id="hardHitWeight" value="15" min="0" max="100" step="1">
+                        </div>
+                        <div class="weight-group">
+                            <label>ISO Power</label>
+                            <input type="number" id="isoWeight" value="15" min="0" max="100" step="1">
+                        </div>
+                        <div class="weight-group">
+                            <label>Contact Quality</label>
+                            <input type="number" id="contactWeight" value="10" min="0" max="100" step="1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="teamHistory" class="results" style="display: none;">
+                <h3>📈 Team Analysis History</h3>
+                <div class="team-selector">
+                    <label for="teamSelect" style="display: block; font-weight: 600; color: #495057; margin-bottom: 10px;">Compare Teams:</label>
+                    <select id="teamSelect" style="width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 5px; margin-bottom: 15px;">
+                        <option value="">Select a team to view...</option>
+                    </select>
+                    <button id="clearHistoryBtn" style="background: #dc3545; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 0.9em;">
+                        Clear All History
+                    </button>
+                </div>
+                <div id="teamComparison" class="team-comparison"></div>
+            </div>
+
+            <div id="results" class="results" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>🏆 <span id="currentTeamTitle">Top Performing Hitters</span></h3>
+                    <button id="saveTeamBtn" class="analyze-btn" style="width: auto; margin: 0; padding: 10px 20px;">
+                        💾 Save Team Analysis
+                    </button>
+                </div>
+                <div id="topPlayers" class="top-players"></div>
+                
+                <h3 style="margin-top: 30px;">📋 Complete Rankings</h3>
+                <div id="fullTable" class="full-table"></div>
+            </div>
+
+            <div id="loading" class="loading" style="display: none;">
+                <p>⚾ Analyzing hitter performance...</p>
+            </div>
+
+            <div id="error" class="error" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        let hitterData = [];
+        let savedTeams = [];
+        let currentAnalysis = null;
+        let batchTeams = [];
+
+        // Load saved teams from memory on page load
+        loadSavedTeams();
+
+        document.getElementById('analysisMode').addEventListener('change', function(e) {
+            const mode = e.target.value;
+            const singleMode = document.getElementById('singleMode');
+            const batchMode = document.getElementById('batchMode');
+            const analyzeBtn = document.getElementById('analyzeBtn');
+            
+            if (mode === 'batch') {
+                singleMode.style.display = 'none';
+                batchMode.style.display = 'block';
+                analyzeBtn.textContent = '🔍 Analyze All Teams';
+            } else {
+                singleMode.style.display = 'block';
+                batchMode.style.display = 'none';
+                analyzeBtn.textContent = '🔍 Analyze Hitters';
+            }
+            
+            // Reset analysis state
+            document.getElementById('analyzeBtn').disabled = true;
+            hitterData = [];
+            batchTeams = [];
+        });
+
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            handleSingleFileUpload(e.target.files[0]);
+        });
+
+        document.getElementById('batchFiles').addEventListener('change', function(e) {
+            handleBatchFileUpload(e.target.files);
+        });
+
+        document.getElementById('analyzeBtn').addEventListener('click', function() {
+            const mode = document.getElementById('analysisMode').value;
+            if (mode === 'batch') {
+                analyzeBatchTeams();
+            } else {
+                analyzeHitters();
+            }
+        });
+
+        document.getElementById('saveTeamBtn').addEventListener('click', saveCurrentTeam);
+        document.getElementById('clearHistoryBtn').addEventListener('click', clearAllHistory);
+        document.getElementById('teamSelect').addEventListener('change', displaySelectedTeam);
+
+        function handleSingleFileUpload(file) {
+            const statusDiv = document.getElementById('fileStatus');
+            const label = document.querySelector('.file-input-label');
+            
+            if (file) {
+                statusDiv.className = 'file-status';
+                statusDiv.style.display = 'block';
+                statusDiv.textContent = 'Reading file...';
+                
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const csv = e.target.result;
+                        hitterData = parseCSV(csv);
+                        
+                        if (hitterData.length > 0) {
+                            statusDiv.className = 'file-status success';
+                            statusDiv.textContent = `✅ Successfully loaded ${hitterData.length} players from ${file.name}`;
+                            label.classList.add('has-file');
+                            label.querySelector('.file-main').textContent = file.name;
+                            label.querySelector('.file-sub').textContent = `${hitterData.length} players loaded`;
+                            document.getElementById('analyzeBtn').disabled = false;
+                            console.log('Loaded', hitterData.length, 'hitters from CSV');
+                        } else {
+                            throw new Error('No valid player data found in CSV');
+                        }
+                    } catch (error) {
+                        statusDiv.className = 'file-status error';
+                        statusDiv.textContent = `❌ Error reading file: ${error.message}`;
+                        label.classList.remove('has-file');
+                        document.getElementById('analyzeBtn').disabled = true;
+                        console.error('CSV parsing error:', error);
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+
+        function handleBatchFileUpload(files) {
+            const statusDiv = document.getElementById('batchStatus');
+            const label = document.querySelector('#batchMode .file-input-label');
+            
+            if (files.length === 0) return;
+            
+            statusDiv.innerHTML = '<p style="color: #495057; font-weight: 600;">Processing files...</p>';
+            batchTeams = [];
+            let filesProcessed = 0;
+            
+            Array.from(files).forEach((file, index) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const csv = e.target.result;
+                        const players = parseCSV(csv);
+                        
+                        if (players.length > 0) {
+                            // Extract team name from filename or use generic name
+                            let teamName = file.name.replace('.csv', '').replace(/_/g, ' ');
+                            teamName = teamName.charAt(0).toUpperCase() + teamName.slice(1);
+                            
+                            batchTeams.push({
+                                name: teamName,
+                                fileName: file.name,
+                                players: players,
+                                playerCount: players.length
+                            });
+                            
+                            addFileStatusItem(file.name, players.length, 'success');
+                        } else {
+                            addFileStatusItem(file.name, 0, 'error', 'No valid player data found');
+                        }
+                    } catch (error) {
+                        addFileStatusItem(file.name, 0, 'error', error.message);
+                    }
+                    
+                    filesProcessed++;
+                    if (filesProcessed === files.length) {
+                        finalizeBatchUpload();
+                    }
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        function addFileStatusItem(fileName, playerCount, status, errorMsg = '') {
+            const statusDiv = document.getElementById('batchStatus');
+            
+            // Create container if it doesn't exist
+            let container = statusDiv.querySelector('.file-items');
+            if (!container) {
+                statusDiv.innerHTML = '<div class="file-items"></div>';
+                container = statusDiv.querySelector('.file-items');
+            }
+            
+            const item = document.createElement('div');
+            item.className = `file-item ${status}`;
+            
+            const statusIcon = status === 'success' ? '✅' : '❌';
+            const details = status === 'success' ? 
+                `${playerCount} players loaded` : 
+                `Error: ${errorMsg}`;
+            
+            item.innerHTML = `
+                <div class="file-info">
+                    <div class="file-name">${statusIcon} ${fileName}</div>
+                    <div class="file-details">${details}</div>
+                </div>
+            `;
+            
+            container.appendChild(item);
+        }
+
+        function finalizeBatchUpload() {
+            const label = document.querySelector('#batchMode .file-input-label');
+            
+            if (batchTeams.length > 0) {
+                label.classList.add('has-file');
+                label.querySelector('.file-main').textContent = `${batchTeams.length} teams loaded`;
+                label.querySelector('.file-sub').textContent = `Ready for batch analysis`;
+                document.getElementById('analyzeBtn').disabled = false;
+                console.log('Batch loaded:', batchTeams.length, 'teams');
+            } else {
+                label.classList.remove('has-file');
+                document.getElementById('analyzeBtn').disabled = true;
+            }
+        }
+
+        function parseCSV(csv) {
+            const lines = csv.split('\n').filter(line => line.trim());
+            if (lines.length < 2) {
+                throw new Error('CSV file appears to be empty or invalid');
+            }
+
+            // Parse header
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            console.log('CSV Headers found:', headers);
+            
+            const players = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                try {
+                    // Handle CSV parsing with potential commas in quoted fields
+                    const values = parseCSVLine(lines[i]);
+                    
+                    if (values.length >= headers.length - 2) { // Allow some flexibility
+                        const player = {};
+                        
+                        headers.forEach((header, index) => {
+                            let value = values[index] ? values[index].trim().replace(/"/g, '') : '';
+                            
+                            // Handle percentage values
+                            if (value.endsWith('%')) {
+                                value = parseFloat(value.replace('%', ''));
+                            }
+                            // Handle numeric values
+                            else if (value && !isNaN(value) && value !== '' && value !== '--' && value !== 'null') {
+                                value = parseFloat(value);
+                            }
+                            // Handle missing/null values
+                            else if (value === '--' || value === '' || value === 'null') {
+                                value = 0;
+                            }
+                            
+                            player[header] = value;
+                        });
+                        
+                        // Only add players with meaningful data (check for PA or other key stats)
+                        if ((player.PA && player.PA > 0) || (player.pa && player.pa > 0) || 
+                            (player['Plate Appearances'] && player['Plate Appearances'] > 0)) {
+                            players.push(player);
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Skipping line ${i + 1} due to parsing error:`, error);
+                }
+            }
+
+            if (players.length === 0) {
+                throw new Error('No valid player records found. Please check that the CSV contains hitting statistics.');
+            }
+
+            console.log('Sample player data:', players[0]);
+            return players;
+        }
+
+        function parseCSVLine(line) {
+            const values = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    values.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            
+            values.push(current); // Add the last value
+            return values;
+        }
+
+        function analyzeBatchTeams() {
+            if (batchTeams.length === 0) {
+                showError('Please upload CSV files first.');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+
+            setTimeout(() => {
+                try {
+                    const analyzedTeams = [];
+
+                    // Analyze each team
+                    batchTeams.forEach(team => {
+                        const analyzedHitters = team.players.map(player => {
+                            const compositeScore = calculateCompositeScore(player);
+                            return {
+                                ...player,
+                                compositeScore: compositeScore
+                            };
+                        }).filter(player => player.compositeScore > 0);
+
+                        if (analyzedHitters.length > 0) {
+                            analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
+                            
+                            analyzedTeams.push({
+                                name: team.name,
+                                fileName: team.fileName,
+                                hitters: analyzedHitters,
+                                stats: calculateTeamStats(analyzedHitters)
+                            });
+                        }
+                    });
+
+                    if (analyzedTeams.length === 0) {
+                        throw new Error('No teams with valid statistics found.');
+                    }
+
+                    // Sort teams by average composite score
+                    analyzedTeams.sort((a, b) => b.stats.avgScore - a.stats.avgScore);
+
+                    displayBatchResults(analyzedTeams);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('results').style.display = 'block';
+                    
+                    // Auto-save all teams to history
+                    analyzedTeams.forEach(team => {
+                        const teamAnalysis = {
+                            hitters: team.hitters,
+                            teamName: team.name,
+                            date: new Date().toLocaleDateString(),
+                            weights: {
+                                laWeight: parseFloat(document.getElementById('laWeight').value),
+                                xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value),
+                                barrelWeight: parseFloat(document.getElementById('barrelWeight').value),
+                                hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value),
+                                isoWeight: parseFloat(document.getElementById('isoWeight').value),
+                                contactWeight: parseFloat(document.getElementById('contactWeight').value)
+                            }
+                        };
+                        
+                        const existingIndex = savedTeams.findIndex(t => t.teamName === team.name);
+                        if (existingIndex >= 0) {
+                            savedTeams[existingIndex] = teamAnalysis;
+                        } else {
+                            savedTeams.push(teamAnalysis);
+                        }
+                    });
+                    
+                    updateTeamSelector();
+                    showTeamHistory();
+
+                } catch (error) {
+                    console.error('Error analyzing batch teams:', error);
+                    showError('Error analyzing data: ' + error.message);
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 500);
+        }
+
+        function calculateTeamStats(hitters) {
+            const scores = hitters.map(h => h.compositeScore);
+            const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+            const topScore = Math.max(...scores);
+            const eliteCount = hitters.filter(h => h.compositeScore >= 70).length;
+            const depthScore = hitters.slice(0, 10).reduce((sum, h) => sum + h.compositeScore, 0) / Math.min(10, hitters.length);
+            
+            return {
+                avgScore,
+                topScore,
+                eliteCount,
+                depthScore,
+                playerCount: hitters.length
+            };
+        }
+
+        function displayBatchResults(teams) {
+            const container = document.getElementById('topPlayers');
+            container.innerHTML = '';
+
+            // Create batch summary
+            const batchSummary = document.createElement('div');
+            batchSummary.className = 'batch-summary';
+            
+            const totalPlayers = teams.reduce((sum, team) => sum + team.hitters.length, 0);
+            const avgTeamScore = teams.reduce((sum, team) => sum + team.stats.avgScore, 0) / teams.length;
+            const bestTeam = teams[0];
+            const mostElite = teams.reduce((best, team) => 
+                team.stats.eliteCount > best.stats.eliteCount ? team : best
+            );
+
+            batchSummary.innerHTML = `
+                <h4>📊 Batch Analysis Summary</h4>
+                <div class="summary-stats">
+                    <div class="summary-stat">
+                        <div class="summary-label">Teams Analyzed</div>
+                        <div class="summary-value">${teams.length}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Total Players</div>
+                        <div class="summary-value">${totalPlayers}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Avg Team Score</div>
+                        <div class="summary-value">${avgTeamScore.toFixed(1)}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Best Overall</div>
+                        <div class="summary-value">${bestTeam.name}</div>
+                    </div>
+                    <div class="summary-stat">
+                        <div class="summary-label">Most Elite Players</div>
+                        <div class="summary-value">${mostElite.name} (${mostElite.stats.eliteCount})</div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(batchSummary);
+
+            // Create team comparison grid
+            const comparisonGrid = document.createElement('div');
+            comparisonGrid.className = 'team-comparison-grid';
+
+            teams.forEach((team, index) => {
+                const teamCard = document.createElement('div');
+                teamCard.className = 'team-summary';
+                if (index === 0) teamCard.style.borderLeftColor = '#ffd700';
+                if (index === 1) teamCard.style.borderLeftColor = '#c0c0c0';
+                if (index === 2) teamCard.style.borderLeftColor = '#cd7f32';
+
+                const topPlayers = team.hitters.slice(0, 3);
+                
+                teamCard.innerHTML = `
+                    <div class="team-header">
+                        <div class="team-name">#${index + 1} ${team.name}</div>
+                        <div class="team-date">${team.stats.avgScore.toFixed(1)} avg</div>
+                    </div>
+                    <div class="team-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Players</div>
+                            <div class="stat-value">${team.stats.playerCount}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Top Score</div>
+                            <div class="stat-value">${team.stats.topScore.toFixed(1)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Elite (70+)</div>
+                            <div class="stat-value">${team.stats.eliteCount}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Depth Score</div>
+                            <div class="stat-value">${team.stats.depthScore.toFixed(1)}</div>
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 10px; font-weight: 600; color: #495057;">Top 3 Players:</div>
+                    <div class="team-top-players">
+                        ${topPlayers.map((player, pIndex) => {
+                            const playerName = player.player_name || 'Unknown';
+                            return `
+                                <div class="mini-player-card">
+                                    <div class="mini-player-name">#${pIndex + 1} ${playerName}</div>
+                                    <div class="mini-player-score">${player.compositeScore.toFixed(1)} pts</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+                
+                comparisonGrid.appendChild(teamCard);
+            });
+
+            container.appendChild(comparisonGrid);
+
+            // Update current team title
+            document.getElementById('currentTeamTitle').textContent = `Batch Analysis Results - ${teams.length} Teams`;
+            
+            // Hide save button in batch mode
+            document.getElementById('saveTeamBtn').style.display = 'none';
+
+            // Create detailed table for batch results
+            displayBatchTable(teams);
+        }
+
+        function displayBatchTable(teams) {
+            const container = document.getElementById('fullTable');
+            
+            const table = document.createElement('table');
+            
+            // Headers
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th>Team Rank</th>
+                    <th>Team</th>
+                    <th>Player Rank</th>
+                    <th>Player</th>
+                    <th>Score</th>
+                    <th>xWOBA</th>
+                    <th>WOBA</th>
+                    <th>Gap</th>
+                    <th>Barrel%</th>
+                    <th>Hard Hit%</th>
+                    <th>ISO</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+
+            // Body - show top 5 players from each team
+            const tbody = document.createElement('tbody');
+            teams.forEach((team, teamIndex) => {
+                const topHitters = team.hitters.slice(0, 5);
+                
+                topHitters.forEach((player, playerIndex) => {
+                    const row = document.createElement('tr');
+                    const playerName = player.player_name || 'Unknown';
+                    const xwobaGap = (player.xwoba || 0) - (player.woba || 0);
+                    
+                    // Color code team rows
+                    if (teamIndex % 2 === 0) {
+                        row.style.backgroundColor = '#f8f9fa';
+                    }
+                    
+                    row.innerHTML = `
+                        <td><strong>#${teamIndex + 1}</strong></td>
+                        <td style="text-align: left;"><strong>${team.name}</strong></td>
+                        <td><strong>${playerIndex + 1}</strong></td>
+                        <td style="text-align: left;">${playerName}</td>
+                        <td><strong>${player.compositeScore.toFixed(1)}</strong></td>
+                        <td>${(player.xwoba || 0).toFixed(3)}</td>
+                        <td>${(player.woba || 0).toFixed(3)}</td>
+                        <td style="color: ${xwobaGap > 0 ? '#28a745' : '#dc3545'};">
+                            ${xwobaGap > 0 ? '+' : ''}${xwobaGap.toFixed(3)}
+                        </td>
+                        <td>${(player.barrels_per_pa_percent || 0).toFixed(1)}%</td>
+                        <td>${(player.hardhit_percent || 0).toFixed(1)}%</td>
+                        <td>${(player.iso || 0).toFixed(3)}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                
+                // Add separator row between teams
+                if (teamIndex < teams.length - 1) {
+                    const separatorRow = document.createElement('tr');
+                    separatorRow.innerHTML = '<td colspan="11" style="height: 5px; background: #dee2e6;"></td>';
+                    tbody.appendChild(separatorRow);
+                }
+            });
+            table.appendChild(tbody);
+
+            container.innerHTML = '';
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'table-container';
+            tableContainer.appendChild(table);
+            container.appendChild(tableContainer);
+        }
+
+        function calculateCompositeScore(player) {
+            const weights = {
+                laWeight: parseFloat(document.getElementById('laWeight').value) / 100,
+                xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value) / 100,
+                barrelWeight: parseFloat(document.getElementById('barrelWeight').value) / 100,
+                hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value) / 100,
+                isoWeight: parseFloat(document.getElementById('isoWeight').value) / 100,
+                contactWeight: parseFloat(document.getElementById('contactWeight').value) / 100
+            };
+
+            let score = 0;
+            let totalWeight = 0;
+
+            // Launch Angle Quality - use actual launch_angle, aim for 8-32 degree sweet spot
+            const laAngle = player.launch_angle || 0;
+            if (laAngle > 0) {
+                // Sweet spot calculation: optimal between 8-32 degrees
+                let laQuality = 0;
+                if (laAngle >= 8 && laAngle <= 32) {
+                    laQuality = 100; // Perfect sweet spot
+                } else if (laAngle >= 5 && laAngle < 8) {
+                    laQuality = 70; // Good
+                } else if (laAngle > 32 && laAngle <= 40) {
+                    laQuality = 70; // Good
+                } else if (laAngle >= 0 && laAngle < 5) {
+                    laQuality = 30; // Below average
+                } else if (laAngle > 40) {
+                    laQuality = 20; // Poor (too high)
+                }
+                score += laQuality * weights.laWeight;
+                totalWeight += weights.laWeight;
+            }
+
+            // xWOBA vs WOBA Gap (positive regression potential)
+            const xwoba = player.xwoba || 0;
+            const woba = player.woba || 0;
+            if (xwoba > 0 && woba > 0) {
+                const gap = Math.max(0, xwoba - woba);
+                score += (gap / 0.100) * 100 * weights.xwobaWeight; // Normalize to 0.100 gap
+                totalWeight += weights.xwobaWeight;
+            }
+
+            // Barrel Percentage (barrels_per_pa_percent in CSV)
+            const barrelPct = player.barrels_per_pa_percent || 0;
+            if (barrelPct > 0) {
+                score += (barrelPct / 30) * 100 * weights.barrelWeight; // Normalize to 30% max
+                totalWeight += weights.barrelWeight;
+            }
+
+            // Hard Hit Percentage
+            const hardHitPct = player.hardhit_percent || 0;
+            if (hardHitPct > 0) {
+                score += (hardHitPct / 60) * 100 * weights.hardHitWeight; // Normalize to 60% max
+                totalWeight += weights.hardHitWeight;
+            }
+
+            // ISO Power
+            const iso = player.iso || 0;
+            if (iso > 0) {
+                score += (iso / 0.400) * 100 * weights.isoWeight; // Normalize to 0.400 max
+                totalWeight += weights.isoWeight;
+            }
+
+            // Contact Quality - use available metrics from CSV
+            const whiffRate = player.swing_miss_percent || 0;
+            const kRate = player.k_percent || 0;
+            if (whiffRate >= 0 || kRate >= 0) {
+                // Convert whiff/K rates to contact quality (lower is better, so invert)
+                const contactQuality = Math.max(0, 100 - ((whiffRate + kRate) / 2));
+                score += contactQuality * weights.contactWeight;
+                totalWeight += weights.contactWeight;
+            }
+
+            return totalWeight > 0 ? score / totalWeight : 0;
+        }
+
+        function analyzeHitters() {
+            if (hitterData.length === 0) {
+                showError('Please upload a CSV file first.');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+
+            setTimeout(() => {
+                try {
+                    console.log('Analyzing', hitterData.length, 'hitters');
+                    console.log('Sample player:', hitterData[0]);
+
+                    // Calculate composite scores
+                    const analyzedHitters = hitterData.map(player => {
+                        const compositeScore = calculateCompositeScore(player);
+                        return {
+                            ...player,
+                            compositeScore: compositeScore
+                        };
+                    }).filter(player => player.compositeScore > 0);
+
+                    if (analyzedHitters.length === 0) {
+                        throw new Error('No players with valid statistics found. Please check that the CSV contains the required hitting metrics (wOBA, xwOBA, Barrel%, etc.).');
+                    }
+
+                    // Sort by composite score
+                    analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
+
+                    // Store current analysis
+                    currentAnalysis = {
+                        hitters: analyzedHitters,
+                        teamName: document.getElementById('teamName').value.trim() || 'Unnamed Team',
+                        date: new Date().toLocaleDateString(),
+                        weights: {
+                            laWeight: parseFloat(document.getElementById('laWeight').value),
+                            xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value),
+                            barrelWeight: parseFloat(document.getElementById('barrelWeight').value),
+                            hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value),
+                            isoWeight: parseFloat(document.getElementById('isoWeight').value),
+                            contactWeight: parseFloat(document.getElementById('contactWeight').value)
+                        }
+                    };
+
+                    displayResults(analyzedHitters);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('results').style.display = 'block';
+                    
+                    // Update current team title and show save button for single analysis
+                    document.getElementById('currentTeamTitle').textContent = `${currentAnalysis.teamName} - Top Performing Hitters`;
+                    document.getElementById('saveTeamBtn').style.display = 'block';
+                } catch (error) {
+                    console.error('Error analyzing hitters:', error);
+                    showError('Error analyzing data: ' + error.message);
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 500);
+        }
+
+        function saveCurrentTeam() {
+            if (!currentAnalysis) {
+                showError('No analysis to save. Please analyze some data first.');
+                return;
+            }
+
+            // Check if team name already exists
+            const existingIndex = savedTeams.findIndex(team => team.teamName === currentAnalysis.teamName);
+            
+            if (existingIndex >= 0) {
+                // Update existing team
+                savedTeams[existingIndex] = { ...currentAnalysis };
+                console.log('Updated existing team:', currentAnalysis.teamName);
+            } else {
+                // Add new team
+                savedTeams.push({ ...currentAnalysis });
+                console.log('Saved new team:', currentAnalysis.teamName);
+            }
+
+            updateTeamSelector();
+            showTeamHistory();
+            
+            // Show success message briefly
+            const btn = document.getElementById('saveTeamBtn');
+            const originalText = btn.textContent;
+            btn.textContent = '✅ Saved!';
+            btn.style.background = '#28a745';
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.background = '';
+            }, 2000);
+        }
+
+        function loadSavedTeams() {
+            // In a real application, this would load from localStorage
+            // For now, start with empty array since we can't use localStorage in artifacts
+            savedTeams = [];
+            updateTeamSelector();
+        }
+
+        function updateTeamSelector() {
+            const select = document.getElementById('teamSelect');
+            select.innerHTML = '<option value="">Select a team to view...</option>';
+            
+            savedTeams.forEach((team, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${team.teamName} (${team.date})`;
+                select.appendChild(option);
+            });
+
+            if (savedTeams.length > 0) {
+                document.getElementById('teamHistory').style.display = 'block';
+            }
+        }
+
+        function showTeamHistory() {
+            if (savedTeams.length === 0) return;
+            
+            document.getElementById('teamHistory').style.display = 'block';
+            displayTeamComparison();
+        }
+
+        function displaySelectedTeam() {
+            const select = document.getElementById('teamSelect');
+            const selectedIndex = select.value;
+            
+            if (selectedIndex === '') {
+                displayTeamComparison();
+            } else {
+                const team = savedTeams[selectedIndex];
+                displaySingleTeam(team);
+            }
+        }
+
+        function displayTeamComparison() {
+            const container = document.getElementById('teamComparison');
+            container.innerHTML = '';
+
+            if (savedTeams.length === 0) {
+                container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 20px;">No teams saved yet. Analyze and save some teams to see comparisons here.</p>';
+                return;
+            }
+
+            savedTeams.forEach(team => {
+                const teamDiv = createTeamSummary(team);
+                container.appendChild(teamDiv);
+            });
+        }
+
+        function displaySingleTeam(team) {
+            const container = document.getElementById('teamComparison');
+            container.innerHTML = '';
+            
+            const teamDiv = createDetailedTeamView(team);
+            container.appendChild(teamDiv);
+        }
+
+        function createTeamSummary(team) {
+            const div = document.createElement('div');
+            div.className = 'team-summary';
+            
+            const topHitters = team.hitters.slice(0, 5);
+            const avgScore = (team.hitters.reduce((sum, h) => sum + h.compositeScore, 0) / team.hitters.length).toFixed(1);
+            const topScore = team.hitters[0].compositeScore.toFixed(1);
+            
+            div.innerHTML = `
+                <div class="team-header">
+                    <div class="team-name">${team.teamName}</div>
+                    <div class="team-date">${team.date}</div>
+                </div>
+                <div class="team-stats">
+                    <div class="stat-item">
+                        <div class="stat-label">Players</div>
+                        <div class="stat-value">${team.hitters.length}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Top Score</div>
+                        <div class="stat-value">${topScore}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Avg Score</div>
+                        <div class="stat-value">${avgScore}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Elite (70+)</div>
+                        <div class="stat-value">${team.hitters.filter(h => h.compositeScore >= 70).length}</div>
+                    </div>
+                </div>
+                <div style="margin-bottom: 10px; font-weight: 600; color: #495057;">Top 5 Players:</div>
+                <div class="team-top-players">
+                    ${topHitters.map((player, index) => {
+                        const playerName = team.hitters[0].player_name || 'Unknown';
+                        return `
+                            <div class="mini-player-card">
+                                <div class="mini-player-name">#${index + 1} ${playerName}</div>
+                                <div class="mini-player-score">${player.compositeScore.toFixed(1)} pts</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            
+            return div;
+        }
+
+        function createDetailedTeamView(team) {
+            const div = document.createElement('div');
+            div.className = 'team-summary';
+            
+            // Create a mini version of the full results for this team
+            const topHitters = team.hitters.slice(0, 10);
+            
+            div.innerHTML = `
+                <div class="team-header">
+                    <div class="team-name">${team.teamName} - Detailed View</div>
+                    <div class="team-date">${team.date}</div>
+                </div>
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #495057; margin-bottom: 15px;">Top 10 Players:</h4>
+                    <div class="top-players">
+                        ${topHitters.map((player, index) => {
+                            const playerName = player.Name || player.Player || 'Unknown';
+                            return `
+                                <div class="player-card">
+                                    <div class="player-header">
+                                        <div class="player-name">#${index + 1} ${playerName}</div>
+                                        <div class="composite-score">${player.compositeScore.toFixed(1)} pts</div>
+                                    </div>
+                                    <div class="player-stats">
+                                        <div class="stat-item">
+                                            <div class="stat-label">xWOBA</div>
+                                            <div class="stat-value">${(player.xwoba || 0).toFixed(3)}</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">WOBA</div>
+                                            <div class="stat-value">${(player.woba || 0).toFixed(3)}</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">Barrel%</div>
+                                            <div class="stat-value">${(player.barrels_per_pa_percent || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">Hard Hit%</div>
+                                            <div class="stat-value">${(player.hardhit_percent || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">ISO</div>
+                                            <div class="stat-value">${(player.iso || 0).toFixed(3)}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+            
+            return div;
+        }
+
+        function clearAllHistory() {
+            if (confirm('Are you sure you want to clear all saved team analyses?')) {
+                savedTeams = [];
+                updateTeamSelector();
+                document.getElementById('teamHistory').style.display = 'none';
+                console.log('Cleared all team history');
+            }
+        }
+
+        function displayResults(hitters) {
+            displayTopPlayers(hitters.slice(0, 10));
+            displayFullTable(hitters);
+        }
+
+        function displayTopPlayers(topHitters) {
+            const container = document.getElementById('topPlayers');
+            container.innerHTML = '';
+
+            topHitters.forEach((player, index) => {
+                const card = document.createElement('div');
+                card.className = `player-card top-${index + 1}`;
+
+                const playerName = player.player_name || 'Unknown';
+                
+                card.innerHTML = `
+                    <div class="player-header">
+                        <div class="player-name">#${index + 1} ${playerName}</div>
+                        <div class="composite-score">${player.compositeScore.toFixed(1)} pts</div>
+                    </div>
+                    <div class="player-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">xWOBA</div>
+                            <div class="stat-value">${(player.xwoba || 0).toFixed(3)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">WOBA</div>
+                            <div class="stat-value">${(player.woba || 0).toFixed(3)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Barrel%</div>
+                            <div class="stat-value">${(player.barrels_per_pa_percent || 0).toFixed(1)}%</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Hard Hit%</div>
+                            <div class="stat-value">${(player.hardhit_percent || 0).toFixed(1)}%</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">ISO</div>
+                            <div class="stat-value">${(player.iso || 0).toFixed(3)}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Launch Angle</div>
+                            <div class="stat-value">${(player.launch_angle || 0).toFixed(1)}°</div>
+                        </div>
+                    </div>
+                `;
+
+                container.appendChild(card);
+            });
+        }
+
+        function displayFullTable(hitters) {
+            const container = document.getElementById('fullTable');
+            
+            const table = document.createElement('table');
+            
+            // Headers
+            const thead = document.createElement('thead');
+            thead.innerHTML = `
+                <tr>
+                    <th>Rank</th>
+                    <th>Player</th>
+                    <th>Score</th>
+                    <th>xWOBA</th>
+                    <th>WOBA</th>
+                    <th>Gap</th>
+                    <th>Barrel%</th>
+                    <th>Hard Hit%</th>
+                    <th>ISO</th>
+                    <th>Launch Angle</th>
+                    <th>PA</th>
+                </tr>
+            `;
+            table.appendChild(thead);
+
+            // Body
+            const tbody = document.createElement('tbody');
+            hitters.forEach((player, index) => {
+                const row = document.createElement('tr');
+                const playerName = player.player_name || 'Unknown';
+                const xwobaGap = (player.xwoba || 0) - (player.woba || 0);
+                
+                row.innerHTML = `
+                    <td><strong>${index + 1}</strong></td>
+                    <td style="text-align: left;"><strong>${playerName}</strong></td>
+                    <td><strong>${player.compositeScore.toFixed(1)}</strong></td>
+                    <td>${(player.xwoba || 0).toFixed(3)}</td>
+                    <td>${(player.woba || 0).toFixed(3)}</td>
+                    <td style="color: ${xwobaGap > 0 ? '#28a745' : '#dc3545'};">
+                        ${xwobaGap > 0 ? '+' : ''}${xwobaGap.toFixed(3)}
+                    </td>
+                    <td>${(player.barrels_per_pa_percent || 0).toFixed(1)}%</td>
+                    <td>${(player.hardhit_percent || 0).toFixed(1)}%</td>
+                    <td>${(player.iso || 0).toFixed(3)}</td>
+                    <td>${(player.launch_angle || 0).toFixed(1)}°</td>
+                    <td>${player.pa || 0}</td>
+                `;
+                tbody.appendChild(row);
+            });
+            table.appendChild(tbody);
+
+            container.innerHTML = '';
+            const tableContainer = document.createElement('div');
+            tableContainer.className = 'table-container';
+            tableContainer.appendChild(table);
+            container.appendChild(tableContainer);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
