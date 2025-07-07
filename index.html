@@ -1,279 +1,4 @@
-function analyzeBatchTeams() {
-            if (batchTeams.length === 0) {
-                showError('Please upload CSV files first.');
-                return;
-            }
-
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            document.getElementById('error').style.display = 'none';
-
-            setTimeout(() => {
-                try {
-                    const analyzedTeams = [];
-
-                    // Analyze each team
-                    batchTeams.forEach(team => {
-                        const analyzedHitters = team.players.map(player => {
-                            const compositeScore = calculateCompositeScore(player);
-                            return {
-                                ...player,
-                                compositeScore: compositeScore
-                            };
-                        }).filter(player => player.compositeScore > 0);
-
-                        if (analyzedHitters.length > 0) {
-                            analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
-                            
-                            analyzedTeams.push({
-                                name: team.name,
-                                fileName: team.fileName,
-                                hitters: analyzedHitters,
-                                stats: calculateTeamStats(analyzedHitters)
-                            });
-                        }
-                    });
-
-                    if (analyzedTeams.length === 0) {
-                        throw new Error('No teams with valid statistics found.');
-                    }
-
-                    // Sort teams by average composite score
-                    analyzedTeams.sort((a, b) => b.stats.avgScore - a.stats.avgScore);
-
-                    displayBatchResults(analyzedTeams);
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('results').style.display = 'block';
-                    
-                    // Auto-save all teams to history
-                    analyzedTeams.forEach(team => {
-                        const teamAnalysis = {
-                            hitters: team.hitters,
-                            teamName: team.name,
-                            date: new Date().toLocaleDateString(),
-                            weights: {
-                                laWeight: parseFloat(document.getElementById('laWeight').value),
-                                xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value),
-                                barrelWeight: parseFloat(document.getElementById('barrelWeight').value),
-                                hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value),
-                                isoWeight: parseFloat(document.getElementById('isoWeight').value),
-                                contactWeight: parseFloat(document.getElementById('contactWeight').value)
-                            }
-                        };
-                        
-                        const existingIndex = savedTeams.findIndex(t => t.teamName === team.name);
-                        if (existingIndex >= 0) {
-                            savedTeams[existingIndex] = teamAnalysis;
-                        } else {
-                            savedTeams.push(teamAnalysis);
-                        }
-                    });
-                    
-                    updateTeamSelector();
-                    showTeamHistory();
-
-                } catch (error) {
-                    console.error('Error analyzing batch teams:', error);
-                    showError('Error analyzing data: ' + error.message);
-                    document.getElementById('loading').style.display = 'none';
-                }
-            }, 500);
-        }
-
-        function calculateTeamStats(hitters) {
-            const scores = hitters.map(h => h.compositeScore);
-            const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
-            const topScore = Math.max(...scores);
-            const eliteCount = hitters.filter(h => h.compositeScore >= 70).length;
-            const depthScore = hitters.slice(0, 10).reduce((sum, h) => sum + h.compositeScore, 0) / Math.min(10, hitters.length);
-            
-            return {
-                avgScore,
-                topScore,
-                eliteCount,
-                depthScore,
-                playerCount: hitters.length
-            };
-        }
-
-        function displayBatchResults(teams) {
-            const container = document.getElementById('topPlayers');
-            container.innerHTML = '';
-
-            // Create batch summary
-            const batchSummary = document.createElement('div');
-            batchSummary.className = 'batch-summary';
-            
-            const totalPlayers = teams.reduce((sum, team) => sum + team.hitters.length, 0);
-            const avgTeamScore = teams.reduce((sum, team) => sum + team.stats.avgScore, 0) / teams.length;
-            const bestTeam = teams[0];
-            const mostElite = teams.reduce((best, team) => 
-                team.stats.eliteCount > best.stats.eliteCount ? team : best
-            );
-
-            batchSummary.innerHTML = `
-                <h4>📊 Batch Analysis Summary</h4>
-                <div class="summary-stats">
-                    <div class="summary-stat">
-                        <div class="summary-label">Teams Analyzed</div>
-                        <div class="summary-value">${teams.length}</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-label">Total Players</div>
-                        <div class="summary-value">${totalPlayers}</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-label">Avg Team Score</div>
-                        <div class="summary-value">${avgTeamScore.toFixed(1)}</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-label">Best Overall</div>
-                        <div class="summary-value">${bestTeam.name}</div>
-                    </div>
-                    <div class="summary-stat">
-                        <div class="summary-label">Most Elite Players</div>
-                        <div class="summary-value">${mostElite.name} (${mostElite.stats.eliteCount})</div>
-                    </div>
-                </div>
-            `;
-            container.appendChild(batchSummary);
-
-            // Create team comparison grid
-            const comparisonGrid = document.createElement('div');
-            comparisonGrid.className = 'team-comparison-grid';
-
-            teams.forEach((team, index) => {
-                const teamCard = document.createElement('div');
-                teamCard.className = 'team-summary';
-                if (index === 0) teamCard.style.borderLeftColor = '#ffd700';
-                if (index === 1) teamCard.style.borderLeftColor = '#c0c0c0';
-                if (index === 2) teamCard.style.borderLeftColor = '#cd7f32';
-
-                const topPlayers = team.hitters.slice(0, 3);
-                
-                teamCard.innerHTML = `
-                    <div class="team-header">
-                        <div class="team-name">#${index + 1} ${team.name}</div>
-                        <div class="team-date">${team.stats.avgScore.toFixed(1)} avg</div>
-                    </div>
-                    <div class="team-stats">
-                        <div class="stat-item">
-                            <div class="stat-label">Players</div>
-                            <div class="stat-value">${team.stats.playerCount}</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Top Score</div>
-                            <div class="stat-value">${team.stats.topScore.toFixed(1)}</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Elite (70+)</div>
-                            <div class="stat-value">${team.stats.eliteCount}</div>
-                        </div>
-                        <div class="stat-item">
-                            <div class="stat-label">Depth Score</div>
-                            <div class="stat-value">${team.stats.depthScore.toFixed(1)}</div>
-                        </div>
-                    </div>
-                    <div class="team-top-players">
-                        ${topPlayers.map((player, pIndex) => {
-                            const playerName = player.player_name || 'Unknown';
-                            return `
-                                <div class="mini-player-card">
-                                    <div class="mini-player-name">#${pIndex + 1} ${playerName}</div>
-                                    <div class="mini-player-score">${player.compositeScore.toFixed(1)} pts</div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                `;
-                
-                comparisonGrid.appendChild(teamCard);
-            });
-
-            container.appendChild(comparisonGrid);
-
-            // Update current team title
-            document.getElementById('currentTeamTitle').textContent = `Batch Analysis Results - ${teams.length} Teams`;
-            
-            // Hide save button in batch mode
-            document.getElementById('saveTeamBtn').style.display = 'none';
-
-            // Create detailed table for batch results
-            displayBatchTable(teams);
-        }
-
-        function displayBatchTable(teams) {
-            const container = document.getElementById('fullTable');
-            
-            const table = document.createElement('table');
-            
-            // Headers
-            const thead = document.createElement('thead');
-            thead.innerHTML = `
-                <tr>
-                    <th>Team Rank</th>
-                    <th>Team</th>
-                    <th>Player Rank</th>
-                    <th>Player</th>
-                    <th>Score</th>
-                    <th>xWOBA</th>
-                    <th>WOBA</th>
-                    <th>Gap</th>
-                    <th>Barrel%</th>
-                    <th>Hard Hit%</th>
-                    <th>ISO</th>
-                </tr>
-            `;
-            table.appendChild(thead);
-
-            // Body - show top 5 players from each team
-            const tbody = document.createElement('tbody');
-            teams.forEach((team, teamIndex) => {
-                const topHitters = team.hitters.slice(0, 5);
-                
-                topHitters.forEach((player, playerIndex) => {
-                    const row = document.createElement('tr');
-                    const playerName = player.player_name || 'Unknown';
-                    const xwobaGap = (player.xwoba || 0) - (player.woba || 0);
-                    
-                    // Color code team rows
-                    if (teamIndex % 2 === 0) {
-                        row.style.backgroundColor = '#f8f9fa';
-                    }
-                    
-                    row.innerHTML = `
-                        <td><strong>#${teamIndex + 1}</strong></td>
-                        <td style="text-align: left;"><strong>${team.name}</strong></td>
-                        <td><strong>${playerIndex + 1}</strong></td>
-                        <td style="text-align: left;">${playerName}</td>
-                        <td><strong>${player.compositeScore.toFixed(1)}</strong></td>
-                        <td>${(player.xwoba || 0).toFixed(3)}</td>
-                        <td>${(player.woba || 0).toFixed(3)}</td>
-                        <td style="color: ${xwobaGap > 0 ? '#28a745' : '#dc3545'};">
-                            ${xwobaGap > 0 ? '+' : ''}${xwobaGap.toFixed(3)}
-                        </td>
-                        <td>${(player.barrels_per_pa_percent || 0).toFixed(1)}%</td>
-                        <td>${(player.hardhit_percent || 0).toFixed(1)}%</td>
-                        <td>${(player.iso || 0).toFixed(3)}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-                
-                // Add separator row between teams
-                if (teamIndex < teams.length - 1) {
-                    const separatorRow = document.createElement('tr');
-                    separatorRow.innerHTML = '<td colspan="11" style="height: 5px; background: #dee2e6;"></td>';
-                    tbody.appendChild(separatorRow);
-                }
-            });
-            table.appendChild(tbody);
-
-            container.innerHTML = '';
-            const tableContainer = document.createElement('div');
-            tableContainer.className = 'table-container';
-            tableContainer.appendChild(table);
-            container.appendChild(tableContainer);
-        }<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -497,6 +222,11 @@ function analyzeBatchTeams() {
             margin-bottom: 5px;
         }
 
+        .summary-value {
+            font-size: 1.2em;
+            font-weight: 600;
+        }
+
         .instructions {
             background: #f8f9fa;
             padding: 15px;
@@ -608,7 +338,7 @@ function analyzeBatchTeams() {
 
         .player-header {
             display: flex;
-            justify-content: between;
+            justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
         }
@@ -847,7 +577,7 @@ function analyzeBatchTeams() {
                     <div class="instructions">
                         <p style="margin: 15px 0 5px 0; color: #495057; font-weight: 600;">How to get CSV from Baseball Savant:</p>
                         <ol style="margin: 0; padding-left: 20px; color: #6c757d; font-size: 0.9em;">
-                            <li>Go to <a href="https://baseballsavant.mlb.com/statcast_search?hfPT=FF%7CSI%7CFC%7CCH%7CCU%7C&hfAB=&hfGT=R%7C&hfPR=&hfZ=&hfStadium=&hfBBL=&hfNewZones=&hfPull=&hfC=&hfSea=2025%7C&hfSit=&player_type=batter&hfOuts=&hfOpponent=&pitcher_throws=R&batter_stands=&hfSA=&game_date_gt=&game_date_lt=&hfMo=&hfTeam=116%7C&home_road=&hfRO=&position=&hfInfield=&hfOutfield=&hfInn=&hfBBT=&hfFlag=is%5C.%5C.bunt%5C.%5C.not%7C&metric_1=&group_by=name&min_pitches=0&min_results=0&min_pas=0&sort_col=pitches&player_event_sort=api_p_release_speed&sort_order=desc&chk_stats_pa=on&chk_stats_k_percent=on&chk_stats_bb_percent=on&chk_stats_ba=on&chk_stats_obp=on&chk_stats_slg=on&chk_stats_woba=on&chk_stats_xwoba=on&chk_stats_barrels_total=on&chk_stats_iso=on&chk_stats_launch_speed=on&chk_stats_launch_angle=on&chk_stats_hardhit_percent=on&chk_stats_barrels_per_pa_percent=on#results" target="_blank" style="color: #007bff;">Baseball Savant</a></li>
+                            <li>Go to <a href="https://baseballsavant.mlb.com/statcast_search" target="_blank" style="color: #007bff;">Baseball Savant</a></li>
                             <li>Set your filters (team, pitcher handedness, etc.)</li>
                             <li>Click "Download CSV" button</li>
                             <li><strong>Batch Mode:</strong> Repeat for each team, then upload all files at once</li>
@@ -882,7 +612,7 @@ function analyzeBatchTeams() {
                             <input type="number" id="isoWeight" value="15" min="0" max="100" step="1">
                         </div>
                         <div class="weight-group">
-                            <label>Contact Quality</label>
+                            <label>Contact Quality (K%, Whiff, OBP)</label>
                             <input type="number" id="contactWeight" value="10" min="0" max="100" step="1">
                         </div>
                     </div>
@@ -1183,6 +913,170 @@ function analyzeBatchTeams() {
             return values;
         }
 
+        function calculateCompositeScore(player) {
+            const weights = {
+                laWeight: parseFloat(document.getElementById('laWeight').value) / 100,
+                xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value) / 100,
+                barrelWeight: parseFloat(document.getElementById('barrelWeight').value) / 100,
+                hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value) / 100,
+                isoWeight: parseFloat(document.getElementById('isoWeight').value) / 100,
+                contactWeight: parseFloat(document.getElementById('contactWeight').value) / 100
+            };
+
+            let score = 0;
+            let totalWeight = 0;
+
+            // Launch Angle Quality - use actual launch_angle, aim for 8-32 degree sweet spot
+            const laAngle = player.launch_angle || 0;
+            if (laAngle > 0) {
+                // Sweet spot calculation: optimal between 8-32 degrees
+                let laQuality = 0;
+                if (laAngle >= 8 && laAngle <= 32) {
+                    laQuality = 100; // Perfect sweet spot
+                } else if (laAngle >= 5 && laAngle < 8) {
+                    laQuality = 70; // Good
+                } else if (laAngle > 32 && laAngle <= 40) {
+                    laQuality = 70; // Good
+                } else if (laAngle >= 0 && laAngle < 5) {
+                    laQuality = 30; // Below average
+                } else if (laAngle > 40) {
+                    laQuality = 20; // Poor (too high)
+                }
+                score += laQuality * weights.laWeight;
+                totalWeight += weights.laWeight;
+            }
+
+            // xWOBA vs WOBA Gap (positive regression potential)
+            const xwoba = player.xwoba || 0;
+            const woba = player.woba || 0;
+            if (xwoba > 0 && woba > 0) {
+                const gap = Math.max(0, xwoba - woba);
+                score += (gap / 0.100) * 100 * weights.xwobaWeight; // Normalize to 0.100 gap
+                totalWeight += weights.xwobaWeight;
+            }
+
+            // Barrel Percentage (barrels_per_pa_percent in CSV)
+            const barrelPct = player.barrels_per_pa_percent || 0;
+            if (barrelPct > 0) {
+                score += (barrelPct / 30) * 100 * weights.barrelWeight; // Normalize to 30% max
+                totalWeight += weights.barrelWeight;
+            }
+
+            // Hard Hit Percentage
+            const hardHitPct = player.hardhit_percent || 0;
+            if (hardHitPct > 0) {
+                score += (hardHitPct / 60) * 100 * weights.hardHitWeight; // Normalize to 60% max
+                totalWeight += weights.hardHitWeight;
+            }
+
+            // ISO Power
+            const iso = player.iso || 0;
+            if (iso > 0) {
+                score += (iso / 0.400) * 100 * weights.isoWeight; // Normalize to 0.400 max
+                totalWeight += weights.isoWeight;
+            }
+
+            // Contact Quality - use available metrics from CSV with enhanced K% weighting
+            const whiffRate = player.swing_miss_percent || 0;
+            const kRate = player.k_percent || 0;
+            const obp = player.obp || 0;
+            
+            if (whiffRate >= 0 || kRate >= 0 || obp > 0) {
+                // Enhanced contact quality calculation
+                let contactQuality = 0;
+                let contactComponents = 0;
+                
+                // K% component (heavily weighted since it's very predictive)
+                if (kRate >= 0) {
+                    const kQuality = Math.max(0, 100 - (kRate * 3)); // Scale K% impact
+                    contactQuality += kQuality * 0.6; // 60% weight to K%
+                    contactComponents += 0.6;
+                }
+                
+                // Whiff rate component
+                if (whiffRate >= 0) {
+                    const whiffQuality = Math.max(0, 100 - (whiffRate * 2));
+                    contactQuality += whiffQuality * 0.3; // 30% weight to whiff rate
+                    contactComponents += 0.3;
+                }
+                
+                // OBP component (plate discipline indicator)
+                if (obp > 0) {
+                    const obpQuality = (obp / 0.450) * 100; // Normalize to elite OBP
+                    contactQuality += obpQuality * 0.1; // 10% weight to OBP
+                    contactComponents += 0.1;
+                }
+                
+                if (contactComponents > 0) {
+                    score += (contactQuality / contactComponents) * weights.contactWeight;
+                    totalWeight += weights.contactWeight;
+                }
+            }
+
+            return totalWeight > 0 ? score / totalWeight : 0;
+        }
+
+        function analyzeHitters() {
+            if (hitterData.length === 0) {
+                showError('Please upload a CSV file first.');
+                return;
+            }
+
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+
+            setTimeout(() => {
+                try {
+                    console.log('Analyzing', hitterData.length, 'hitters');
+                    console.log('Sample player:', hitterData[0]);
+
+                    // Calculate composite scores
+                    const analyzedHitters = hitterData.map(player => {
+                        const compositeScore = calculateCompositeScore(player);
+                        return {
+                            ...player,
+                            compositeScore: compositeScore
+                        };
+                    }).filter(player => player.compositeScore > 0);
+
+                    if (analyzedHitters.length === 0) {
+                        throw new Error('No players with valid statistics found. Please check that the CSV contains the required hitting metrics (wOBA, xwOBA, Barrel%, etc.).');
+                    }
+
+                    // Sort by composite score
+                    analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
+
+                    // Store current analysis
+                    currentAnalysis = {
+                        hitters: analyzedHitters,
+                        teamName: document.getElementById('teamName').value.trim() || 'Unnamed Team',
+                        date: new Date().toLocaleDateString(),
+                        weights: {
+                            laWeight: parseFloat(document.getElementById('laWeight').value),
+                            xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value),
+                            barrelWeight: parseFloat(document.getElementById('barrelWeight').value),
+                            hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value),
+                            isoWeight: parseFloat(document.getElementById('isoWeight').value),
+                            contactWeight: parseFloat(document.getElementById('contactWeight').value)
+                        }
+                    };
+
+                    displayResults(analyzedHitters);
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('results').style.display = 'block';
+                    
+                    // Update current team title and show save button for single analysis
+                    document.getElementById('currentTeamTitle').textContent = `${currentAnalysis.teamName} - Top Performing Hitters`;
+                    document.getElementById('saveTeamBtn').style.display = 'block';
+                } catch (error) {
+                    console.error('Error analyzing hitters:', error);
+                    showError('Error analyzing data: ' + error.message);
+                    document.getElementById('loading').style.display = 'none';
+                }
+            }, 500);
+        }
+
         function analyzeBatchTeams() {
             if (batchTeams.length === 0) {
                 showError('Please upload CSV files first.');
@@ -1408,6 +1302,9 @@ function analyzeBatchTeams() {
                     <th>Barrel%</th>
                     <th>Hard Hit%</th>
                     <th>ISO</th>
+                    <th>Launch Angle</th>
+                    <th>K%</th>
+                    <th>OBP</th>
                 </tr>
             `;
             table.appendChild(thead);
@@ -1441,6 +1338,11 @@ function analyzeBatchTeams() {
                         <td>${(player.barrels_per_pa_percent || 0).toFixed(1)}%</td>
                         <td>${(player.hardhit_percent || 0).toFixed(1)}%</td>
                         <td>${(player.iso || 0).toFixed(3)}</td>
+                        <td>${(player.launch_angle || 0).toFixed(1)}°</td>
+                        <td style="color: ${(player.k_percent || 0) < 20 ? '#28a745' : (player.k_percent || 0) > 25 ? '#dc3545' : '#495057'};">
+                            ${(player.k_percent || 0).toFixed(1)}%
+                        </td>
+                        <td>${(player.obp || 0).toFixed(3)}</td>
                     `;
                     tbody.appendChild(row);
                 });
@@ -1448,7 +1350,7 @@ function analyzeBatchTeams() {
                 // Add separator row between teams
                 if (teamIndex < teams.length - 1) {
                     const separatorRow = document.createElement('tr');
-                    separatorRow.innerHTML = '<td colspan="11" style="height: 5px; background: #dee2e6;"></td>';
+                    separatorRow.innerHTML = '<td colspan="14" style="height: 5px; background: #dee2e6;"></td>';
                     tbody.appendChild(separatorRow);
                 }
             });
@@ -1459,143 +1361,6 @@ function analyzeBatchTeams() {
             tableContainer.className = 'table-container';
             tableContainer.appendChild(table);
             container.appendChild(tableContainer);
-        }
-
-        function calculateCompositeScore(player) {
-            const weights = {
-                laWeight: parseFloat(document.getElementById('laWeight').value) / 100,
-                xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value) / 100,
-                barrelWeight: parseFloat(document.getElementById('barrelWeight').value) / 100,
-                hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value) / 100,
-                isoWeight: parseFloat(document.getElementById('isoWeight').value) / 100,
-                contactWeight: parseFloat(document.getElementById('contactWeight').value) / 100
-            };
-
-            let score = 0;
-            let totalWeight = 0;
-
-            // Launch Angle Quality - use actual launch_angle, aim for 8-32 degree sweet spot
-            const laAngle = player.launch_angle || 0;
-            if (laAngle > 0) {
-                // Sweet spot calculation: optimal between 8-32 degrees
-                let laQuality = 0;
-                if (laAngle >= 8 && laAngle <= 32) {
-                    laQuality = 100; // Perfect sweet spot
-                } else if (laAngle >= 5 && laAngle < 8) {
-                    laQuality = 70; // Good
-                } else if (laAngle > 32 && laAngle <= 40) {
-                    laQuality = 70; // Good
-                } else if (laAngle >= 0 && laAngle < 5) {
-                    laQuality = 30; // Below average
-                } else if (laAngle > 40) {
-                    laQuality = 20; // Poor (too high)
-                }
-                score += laQuality * weights.laWeight;
-                totalWeight += weights.laWeight;
-            }
-
-            // xWOBA vs WOBA Gap (positive regression potential)
-            const xwoba = player.xwoba || 0;
-            const woba = player.woba || 0;
-            if (xwoba > 0 && woba > 0) {
-                const gap = Math.max(0, xwoba - woba);
-                score += (gap / 0.100) * 100 * weights.xwobaWeight; // Normalize to 0.100 gap
-                totalWeight += weights.xwobaWeight;
-            }
-
-            // Barrel Percentage (barrels_per_pa_percent in CSV)
-            const barrelPct = player.barrels_per_pa_percent || 0;
-            if (barrelPct > 0) {
-                score += (barrelPct / 30) * 100 * weights.barrelWeight; // Normalize to 30% max
-                totalWeight += weights.barrelWeight;
-            }
-
-            // Hard Hit Percentage
-            const hardHitPct = player.hardhit_percent || 0;
-            if (hardHitPct > 0) {
-                score += (hardHitPct / 60) * 100 * weights.hardHitWeight; // Normalize to 60% max
-                totalWeight += weights.hardHitWeight;
-            }
-
-            // ISO Power
-            const iso = player.iso || 0;
-            if (iso > 0) {
-                score += (iso / 0.400) * 100 * weights.isoWeight; // Normalize to 0.400 max
-                totalWeight += weights.isoWeight;
-            }
-
-            // Contact Quality - use available metrics from CSV
-            const whiffRate = player.swing_miss_percent || 0;
-            const kRate = player.k_percent || 0;
-            if (whiffRate >= 0 || kRate >= 0) {
-                // Convert whiff/K rates to contact quality (lower is better, so invert)
-                const contactQuality = Math.max(0, 100 - ((whiffRate + kRate) / 2));
-                score += contactQuality * weights.contactWeight;
-                totalWeight += weights.contactWeight;
-            }
-
-            return totalWeight > 0 ? score / totalWeight : 0;
-        }
-
-        function analyzeHitters() {
-            if (hitterData.length === 0) {
-                showError('Please upload a CSV file first.');
-                return;
-            }
-
-            document.getElementById('loading').style.display = 'block';
-            document.getElementById('results').style.display = 'none';
-            document.getElementById('error').style.display = 'none';
-
-            setTimeout(() => {
-                try {
-                    console.log('Analyzing', hitterData.length, 'hitters');
-                    console.log('Sample player:', hitterData[0]);
-
-                    // Calculate composite scores
-                    const analyzedHitters = hitterData.map(player => {
-                        const compositeScore = calculateCompositeScore(player);
-                        return {
-                            ...player,
-                            compositeScore: compositeScore
-                        };
-                    }).filter(player => player.compositeScore > 0);
-
-                    if (analyzedHitters.length === 0) {
-                        throw new Error('No players with valid statistics found. Please check that the CSV contains the required hitting metrics (wOBA, xwOBA, Barrel%, etc.).');
-                    }
-
-                    // Sort by composite score
-                    analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
-
-                    // Store current analysis
-                    currentAnalysis = {
-                        hitters: analyzedHitters,
-                        teamName: document.getElementById('teamName').value.trim() || 'Unnamed Team',
-                        date: new Date().toLocaleDateString(),
-                        weights: {
-                            laWeight: parseFloat(document.getElementById('laWeight').value),
-                            xwobaWeight: parseFloat(document.getElementById('xwobaWeight').value),
-                            barrelWeight: parseFloat(document.getElementById('barrelWeight').value),
-                            hardHitWeight: parseFloat(document.getElementById('hardHitWeight').value),
-                            isoWeight: parseFloat(document.getElementById('isoWeight').value),
-                            contactWeight: parseFloat(document.getElementById('contactWeight').value)
-                        }
-                    };
-
-                    displayResults(analyzedHitters);
-                    document.getElementById('loading').style.display = 'none';
-                    document.getElementById('results').style.display = 'block';
-                    
-                    // Update current team title and show save button for single analysis
-                    document.getElementById('currentTeamTitle').textContent = `${currentAnalysis.teamName} - Top Performing Hitters`;
-                    document.getElementById('saveTeamBtn').style.display = 'block';
-                } catch (error) {
-                    console.error('Error analyzing hitters:', error);
-                    showError('Error analyzing data: ' + error.message);
-                    document.getElementById('loading').style.display = 'none';
-                }
-            }, 500);
         }
 
         function saveCurrentTeam() {
@@ -1730,7 +1495,7 @@ function analyzeBatchTeams() {
                 <div style="margin-bottom: 10px; font-weight: 600; color: #495057;">Top 5 Players:</div>
                 <div class="team-top-players">
                     ${topHitters.map((player, index) => {
-                        const playerName = team.hitters[0].player_name || 'Unknown';
+                        const playerName = player.player_name || 'Unknown';
                         return `
                             <div class="mini-player-card">
                                 <div class="mini-player-name">#${index + 1} ${playerName}</div>
@@ -1760,7 +1525,7 @@ function analyzeBatchTeams() {
                     <h4 style="color: #495057; margin-bottom: 15px;">Top 10 Players:</h4>
                     <div class="top-players">
                         ${topHitters.map((player, index) => {
-                            const playerName = player.Name || player.Player || 'Unknown';
+                            const playerName = player.player_name || 'Unknown';
                             return `
                                 <div class="player-card">
                                     <div class="player-header">
@@ -1787,6 +1552,18 @@ function analyzeBatchTeams() {
                                         <div class="stat-item">
                                             <div class="stat-label">ISO</div>
                                             <div class="stat-value">${(player.iso || 0).toFixed(3)}</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">Launch Angle</div>
+                                            <div class="stat-value">${(player.launch_angle || 0).toFixed(1)}°</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">K%</div>
+                                            <div class="stat-value">${(player.k_percent || 0).toFixed(1)}%</div>
+                                        </div>
+                                        <div class="stat-item">
+                                            <div class="stat-label">OBP</div>
+                                            <div class="stat-value">${(player.obp || 0).toFixed(3)}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1853,6 +1630,14 @@ function analyzeBatchTeams() {
                             <div class="stat-label">Launch Angle</div>
                             <div class="stat-value">${(player.launch_angle || 0).toFixed(1)}°</div>
                         </div>
+                        <div class="stat-item">
+                            <div class="stat-label">K%</div>
+                            <div class="stat-value">${(player.k_percent || 0).toFixed(1)}%</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">OBP</div>
+                            <div class="stat-value">${(player.obp || 0).toFixed(3)}</div>
+                        </div>
                     </div>
                 `;
 
@@ -1879,6 +1664,8 @@ function analyzeBatchTeams() {
                     <th>Hard Hit%</th>
                     <th>ISO</th>
                     <th>Launch Angle</th>
+                    <th>K%</th>
+                    <th>OBP</th>
                     <th>PA</th>
                 </tr>
             `;
@@ -1904,6 +1691,10 @@ function analyzeBatchTeams() {
                     <td>${(player.hardhit_percent || 0).toFixed(1)}%</td>
                     <td>${(player.iso || 0).toFixed(3)}</td>
                     <td>${(player.launch_angle || 0).toFixed(1)}°</td>
+                    <td style="color: ${(player.k_percent || 0) < 20 ? '#28a745' : (player.k_percent || 0) > 25 ? '#dc3545' : '#495057'};">
+                        ${(player.k_percent || 0).toFixed(1)}%
+                    </td>
+                    <td>${(player.obp || 0).toFixed(3)}</td>
                     <td>${player.pa || 0}</td>
                 `;
                 tbody.appendChild(row);
