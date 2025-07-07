@@ -243,6 +243,45 @@
             margin-bottom: 5px;
         }
 
+        .lineup-selection {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            margin: 15px 0;
+        }
+
+        .player-checkboxes {
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 10px;
+            background: white;
+        }
+
+        .player-checkbox-item {
+            display: flex;
+            align-items: center;
+            padding: 5px 0;
+            border-bottom: 1px solid #f8f9fa;
+        }
+
+        .player-checkbox-item:last-child {
+            border-bottom: none;
+        }
+
+        .player-checkbox-item input[type="checkbox"] {
+            margin-right: 10px;
+        }
+
+        .player-checkbox-item label {
+            flex: 1;
+            font-size: 0.9em;
+            color: #495057;
+            cursor: pointer;
+        }
+
         .weight-controls {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -583,6 +622,23 @@
                             <li><strong>Batch Mode:</strong> Repeat for each team, then upload all files at once</li>
                         </ol>
                     </div>
+
+                    <div id="lineupSelection" class="lineup-selection" style="display: none;">
+                        <h4 style="color: #495057; margin-bottom: 15px;">📋 Select Probable Lineup</h4>
+                        <div style="margin-bottom: 15px;">
+                            <label style="display: block; font-weight: 600; color: #495057; margin-bottom: 8px;">Analysis Mode:</label>
+                            <select id="analysisFilter" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 5px; margin-bottom: 10px;">
+                                <option value="lineup">Lineup Only</option>
+                                <option value="all">All Players</option>
+                            </select>
+                        </div>
+                        <div id="playerCheckboxes" class="player-checkboxes"></div>
+                        <div style="margin-top: 10px;">
+                            <button id="selectAllBtn" style="background: #007bff; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; margin-right: 10px; font-size: 0.9em;">Select All</button>
+                            <button id="clearAllBtn" style="background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer; font-size: 0.9em;">Clear All</button>
+                        </div>
+                    </div>
+
                     <button id="analyzeBtn" class="analyze-btn" disabled>
                         🔍 Analyze Teams
                     </button>
@@ -659,6 +715,7 @@
         let savedTeams = [];
         let currentAnalysis = null;
         let batchTeams = [];
+        let lineupPlayers = new Set();
 
         // Load saved teams from memory on page load
         loadSavedTeams();
@@ -668,10 +725,12 @@
             const singleMode = document.getElementById('singleMode');
             const batchMode = document.getElementById('batchMode');
             const analyzeBtn = document.getElementById('analyzeBtn');
+            const lineupSelection = document.getElementById('lineupSelection');
             
             if (mode === 'batch') {
                 singleMode.style.display = 'none';
                 batchMode.style.display = 'block';
+                lineupSelection.style.display = 'none';
                 analyzeBtn.textContent = '🔍 Analyze All Teams';
             } else {
                 singleMode.style.display = 'block';
@@ -683,6 +742,7 @@
             document.getElementById('analyzeBtn').disabled = true;
             hitterData = [];
             batchTeams = [];
+            lineupPlayers.clear();
         });
 
         document.getElementById('csvFile').addEventListener('change', function(e) {
@@ -705,6 +765,8 @@
         document.getElementById('saveTeamBtn').addEventListener('click', saveCurrentTeam);
         document.getElementById('clearHistoryBtn').addEventListener('click', clearAllHistory);
         document.getElementById('teamSelect').addEventListener('change', displaySelectedTeam);
+        document.getElementById('selectAllBtn').addEventListener('click', selectAllPlayers);
+        document.getElementById('clearAllBtn').addEventListener('click', clearAllPlayers);
 
         function handleSingleFileUpload(file) {
             const statusDiv = document.getElementById('fileStatus');
@@ -727,6 +789,12 @@
                             label.classList.add('has-file');
                             label.querySelector('.file-main').textContent = file.name;
                             label.querySelector('.file-sub').textContent = `${hitterData.length} players loaded`;
+                            
+                            // Show lineup selection for single mode
+                            if (document.getElementById('analysisMode').value === 'single') {
+                                showLineupSelection(hitterData);
+                            }
+                            
                             document.getElementById('analyzeBtn').disabled = false;
                             console.log('Loaded', hitterData.length, 'hitters from CSV');
                         } else {
@@ -913,6 +981,76 @@
             return values;
         }
 
+        function showLineupSelection(players) {
+            const lineupDiv = document.getElementById('lineupSelection');
+            const checkboxContainer = document.getElementById('playerCheckboxes');
+            
+            lineupDiv.style.display = 'block';
+            checkboxContainer.innerHTML = '';
+            lineupPlayers.clear();
+            
+            // Sort players by name for easier selection
+            const sortedPlayers = [...players].sort((a, b) => {
+                const nameA = (a.player_name || 'Unknown').toLowerCase();
+                const nameB = (b.player_name || 'Unknown').toLowerCase();
+                return nameA.localeCompare(nameB);
+            });
+            
+            sortedPlayers.forEach((player, index) => {
+                const playerName = player.player_name || 'Unknown';
+                const playerId = `player_${index}`;
+                
+                const item = document.createElement('div');
+                item.className = 'player-checkbox-item';
+                
+                item.innerHTML = `
+                    <input type="checkbox" id="${playerId}" data-player-name="${playerName}">
+                    <label for="${playerId}">${playerName}</label>
+                `;
+                
+                checkboxContainer.appendChild(item);
+                
+                // Add event listener for checkbox
+                const checkbox = item.querySelector('input[type="checkbox"]');
+                checkbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        lineupPlayers.add(playerName);
+                    } else {
+                        lineupPlayers.delete(playerName);
+                    }
+                });
+            });
+        }
+
+        function selectAllPlayers() {
+            const checkboxes = document.querySelectorAll('#playerCheckboxes input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = true;
+                lineupPlayers.add(checkbox.dataset.playerName);
+            });
+        }
+
+        function clearAllPlayers() {
+            const checkboxes = document.querySelectorAll('#playerCheckboxes input[type="checkbox"]');
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = false;
+            });
+            lineupPlayers.clear();
+        }
+
+        function getFilteredPlayers(allPlayers) {
+            const analysisFilter = document.getElementById('analysisFilter').value;
+            
+            if (analysisFilter === 'lineup' && lineupPlayers.size > 0) {
+                return allPlayers.filter(player => {
+                    const playerName = player.player_name || 'Unknown';
+                    return lineupPlayers.has(playerName);
+                });
+            }
+            
+            return allPlayers; // Return all players if no filter or 'all' selected
+        }
+
         function calculateCompositeScore(player) {
             const weights = {
                 laWeight: parseFloat(document.getElementById('laWeight').value) / 100,
@@ -1031,8 +1169,8 @@
                     console.log('Analyzing', hitterData.length, 'hitters');
                     console.log('Sample player:', hitterData[0]);
 
-                    // Calculate composite scores
-                    const analyzedHitters = hitterData.map(player => {
+                    // Calculate composite scores for all players
+                    const allAnalyzedHitters = hitterData.map(player => {
                         const compositeScore = calculateCompositeScore(player);
                         return {
                             ...player,
@@ -1040,16 +1178,27 @@
                         };
                     }).filter(player => player.compositeScore > 0);
 
-                    if (analyzedHitters.length === 0) {
+                    if (allAnalyzedHitters.length === 0) {
                         throw new Error('No players with valid statistics found. Please check that the CSV contains the required hitting metrics (wOBA, xwOBA, Barrel%, etc.).');
                     }
 
-                    // Sort by composite score
-                    analyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
+                    // Sort all players by composite score
+                    allAnalyzedHitters.sort((a, b) => b.compositeScore - a.compositeScore);
 
-                    // Store current analysis
+                    // Get filtered players for display
+                    const displayHitters = getFilteredPlayers(allAnalyzedHitters);
+                    
+                    if (displayHitters.length === 0) {
+                        throw new Error('No players selected for lineup analysis. Please select players from the lineup or switch to "All Players" mode.');
+                    }
+
+                    // Store current analysis with all players but note display filter
+                    const analysisFilter = document.getElementById('analysisFilter').value;
                     currentAnalysis = {
-                        hitters: analyzedHitters,
+                        hitters: allAnalyzedHitters, // Store all players
+                        displayHitters: displayHitters, // Store filtered players for display
+                        lineupOnly: analysisFilter === 'lineup',
+                        selectedLineup: Array.from(lineupPlayers),
                         teamName: document.getElementById('teamName').value.trim() || 'Unnamed Team',
                         date: new Date().toLocaleDateString(),
                         weights: {
@@ -1062,12 +1211,13 @@
                         }
                     };
 
-                    displayResults(analyzedHitters);
+                    displayResults(displayHitters);
                     document.getElementById('loading').style.display = 'none';
                     document.getElementById('results').style.display = 'block';
                     
                     // Update current team title and show save button for single analysis
-                    document.getElementById('currentTeamTitle').textContent = `${currentAnalysis.teamName} - Top Performing Hitters`;
+                    const titleSuffix = analysisFilter === 'lineup' ? ' - Probable Lineup' : ' - Full Roster';
+                    document.getElementById('currentTeamTitle').textContent = `${currentAnalysis.teamName}${titleSuffix}`;
                     document.getElementById('saveTeamBtn').style.display = 'block';
                 } catch (error) {
                     console.error('Error analyzing hitters:', error);
@@ -1369,16 +1519,27 @@
                 return;
             }
 
+            // Use display hitters for saving (lineup or all based on filter)
+            const teamAnalysis = {
+                hitters: currentAnalysis.displayHitters,
+                allHitters: currentAnalysis.hitters, // Also save all players for reference
+                lineupOnly: currentAnalysis.lineupOnly,
+                selectedLineup: currentAnalysis.selectedLineup,
+                teamName: currentAnalysis.teamName,
+                date: currentAnalysis.date,
+                weights: currentAnalysis.weights
+            };
+
             // Check if team name already exists
             const existingIndex = savedTeams.findIndex(team => team.teamName === currentAnalysis.teamName);
             
             if (existingIndex >= 0) {
                 // Update existing team
-                savedTeams[existingIndex] = { ...currentAnalysis };
+                savedTeams[existingIndex] = teamAnalysis;
                 console.log('Updated existing team:', currentAnalysis.teamName);
             } else {
                 // Add new team
-                savedTeams.push({ ...currentAnalysis });
+                savedTeams.push(teamAnalysis);
                 console.log('Saved new team:', currentAnalysis.teamName);
             }
 
@@ -1410,7 +1571,8 @@
             savedTeams.forEach((team, index) => {
                 const option = document.createElement('option');
                 option.value = index;
-                option.textContent = `${team.teamName} (${team.date})`;
+                const analysisType = team.lineupOnly ? ' (Lineup)' : ' (Full Roster)';
+                option.textContent = `${team.teamName}${analysisType} (${team.date})`;
                 select.appendChild(option);
             });
 
@@ -1468,15 +1630,16 @@
             const topHitters = team.hitters.slice(0, 5);
             const avgScore = (team.hitters.reduce((sum, h) => sum + h.compositeScore, 0) / team.hitters.length).toFixed(1);
             const topScore = team.hitters[0].compositeScore.toFixed(1);
+            const analysisType = team.lineupOnly ? ' (Lineup)' : ' (Full Roster)';
             
             div.innerHTML = `
                 <div class="team-header">
-                    <div class="team-name">${team.teamName}</div>
+                    <div class="team-name">${team.teamName}${analysisType}</div>
                     <div class="team-date">${team.date}</div>
                 </div>
                 <div class="team-stats">
                     <div class="stat-item">
-                        <div class="stat-label">Players</div>
+                        <div class="stat-label">${team.lineupOnly ? 'Lineup' : 'Players'}</div>
                         <div class="stat-value">${team.hitters.length}</div>
                     </div>
                     <div class="stat-item">
@@ -1515,12 +1678,18 @@
             
             // Create a mini version of the full results for this team
             const topHitters = team.hitters.slice(0, 10);
+            const analysisType = team.lineupOnly ? ' (Lineup Analysis)' : ' (Full Roster Analysis)';
             
             div.innerHTML = `
                 <div class="team-header">
-                    <div class="team-name">${team.teamName} - Detailed View</div>
+                    <div class="team-name">${team.teamName}${analysisType} - Detailed View</div>
                     <div class="team-date">${team.date}</div>
                 </div>
+                ${team.lineupOnly ? `
+                    <div style="background: #e3f2fd; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 0.9em; color: #1565c0;">
+                        📋 <strong>Lineup Analysis:</strong> Showing ${team.selectedLineup ? team.selectedLineup.length : team.hitters.length} selected players
+                    </div>
+                ` : ''}
                 <div style="margin-top: 20px;">
                     <h4 style="color: #495057; margin-bottom: 15px;">Top 10 Players:</h4>
                     <div class="top-players">
